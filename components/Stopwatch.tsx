@@ -37,14 +37,14 @@ export default function Stopwatch() {
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-100 shadow-lg">
-      <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
-        <div className="font-mono text-xl text-gray-700 tabular-nums">
-          {String(mins).padStart(2, '0')}:{String(secs).padStart(2, '0')}.{String(ms).padStart(2, '0')}
+      <div className="max-w-2xl mx-auto px-4 py-5 flex items-center justify-between">
+        <div className="font-mono text-4xl font-light text-gray-700 tabular-nums tracking-widest">
+          {String(mins).padStart(2, '0')}:{String(secs).padStart(2, '0')}<span className="text-2xl text-gray-400">.{String(ms).padStart(2, '0')}</span>
         </div>
         <div className="flex gap-2">
           <button
             onClick={() => setRunning(!running)}
-            className={`px-5 py-1.5 rounded-full text-sm font-medium transition-colors ${
+            className={`px-6 py-2 rounded-full text-sm font-medium transition-colors ${
               running
                 ? 'bg-red-50 text-red-600 border border-red-200 hover:bg-red-100'
                 : 'bg-gray-800 text-white hover:bg-gray-700'
@@ -54,7 +54,7 @@ export default function Stopwatch() {
           </button>
           <button
             onClick={reset}
-            className="px-4 py-1.5 rounded-full text-sm text-gray-500 border border-gray-200 hover:bg-gray-50 transition-colors"
+            className="px-5 py-2 rounded-full text-sm text-gray-500 border border-gray-200 hover:bg-gray-50 transition-colors"
           >
             אפס
           </button>

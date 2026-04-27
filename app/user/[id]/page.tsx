@@ -80,7 +80,11 @@ export default function UserPage() {
         ) : (
           <>
             {tab === 'add' && (
-              <View1AddExercise userId={userId} onExerciseAdded={loadExercises} />
+              <View1AddExercise
+                userId={userId}
+                onExerciseAdded={loadExercises}
+                existingLabels={Array.from(new Set(exercises.flatMap((e) => e.labels)))}
+              />
             )}
             {tab === 'update' && (
               <View2UpdatePerformance

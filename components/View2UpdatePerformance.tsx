@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Exercise, measurementLabels } from '@/lib/supabase'
 import { updateExercise, getSessions, upsertSession } from '@/lib/db'
+import { getLabelColor } from '@/lib/labelColor'
 import SetInputs from './SetInputs'
 import Stopwatch from './Stopwatch'
 
@@ -130,19 +131,22 @@ export default function View2UpdatePerformance({ userId, exercises, onExercisesC
     <div className="py-4 pb-24">
       {/* Label filter */}
       <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
-        {allLabels.map((l) => (
-          <button
-            key={l}
-            onClick={() => setSelectedLabel(l)}
-            className={`shrink-0 px-4 py-1.5 rounded-full text-xs border transition-colors ${
-              selectedLabel === l
-                ? 'bg-gray-800 text-white border-gray-800'
-                : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
-            }`}
-          >
-            {l}
-          </button>
-        ))}
+        {allLabels.map((l) => {
+          const isAll = l === 'הכל'
+          const isActive = selectedLabel === l
+          let cls = 'shrink-0 px-4 py-1.5 rounded-full text-xs border transition-colors '
+          if (isAll) {
+            cls += isActive ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+          } else {
+            const c = getLabelColor(l)
+            cls += isActive ? `${c.activeBg} ${c.activeText} ${c.activeBorder} font-medium` : `${c.bg} ${c.text} ${c.border}`
+          }
+          return (
+            <button key={l} onClick={() => setSelectedLabel(l)} className={cls}>
+              {l}
+            </button>
+          )
+        })}
       </div>
 
       {filtered.length === 0 && (
@@ -207,13 +211,33 @@ export default function View2UpdatePerformance({ userId, exercises, onExercisesC
                         הוסף
                       </button>
                     </div>
+                    {allLabels.slice(1).filter((l) => !editLabels.includes(l)).length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mb-2">
+                        {allLabels.slice(1).filter((l) => !editLabels.includes(l)).map((l) => {
+                          const c = getLabelColor(l)
+                          return (
+                            <button
+                              key={l}
+                              type="button"
+                              onClick={() => setEditLabels([...editLabels, l])}
+                              className={`${c.bg} ${c.text} border ${c.border} rounded-full px-2.5 py-0.5 text-xs transition-opacity hover:opacity-70`}
+                            >
+                              + {l}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
                     <div className="flex flex-wrap gap-1.5">
-                      {editLabels.map((l, i) => (
-                        <span key={i} className="flex items-center gap-1 bg-gray-50 border border-gray-200 rounded-full px-2.5 py-0.5 text-xs text-gray-600">
-                          {l}
-                          <button onClick={() => setEditLabels(editLabels.filter((_, idx) => idx !== i))} className="text-gray-400 hover:text-red-400">×</button>
-                        </span>
-                      ))}
+                      {editLabels.map((l, i) => {
+                        const c = getLabelColor(l)
+                        return (
+                          <span key={i} className={`flex items-center gap-1 ${c.bg} border ${c.border} rounded-full px-2.5 py-0.5 text-xs ${c.text}`}>
+                            {l}
+                            <button onClick={() => setEditLabels(editLabels.filter((_, idx) => idx !== i))} className="opacity-50 hover:text-red-400">×</button>
+                          </span>
+                        )
+                      })}
                     </div>
                   </div>
                   <div className="flex gap-2 justify-end">
@@ -231,9 +255,10 @@ export default function View2UpdatePerformance({ userId, exercises, onExercisesC
                     <div className="text-xs text-gray-400 mt-0.5">{measurementLabels[ex.measurement_type]} · {ex.sets_count} סטים</div>
                     {ex.labels.length > 0 && (
                       <div className="flex gap-1 mt-1.5 flex-wrap">
-                        {ex.labels.map((l) => (
-                          <span key={l} className="text-[10px] bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">{l}</span>
-                        ))}
+                        {ex.labels.map((l) => {
+                          const c = getLabelColor(l)
+                          return <span key={l} className={`text-[10px] ${c.bg} ${c.text} rounded-full px-2 py-0.5`}>{l}</span>
+                        })}
                       </div>
                     )}
                   </div>

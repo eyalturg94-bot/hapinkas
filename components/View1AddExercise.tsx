@@ -3,13 +3,15 @@
 import { useState } from 'react'
 import { MeasurementType, measurementLabels } from '@/lib/supabase'
 import { createExercise } from '@/lib/db'
+import { getLabelColor } from '@/lib/labelColor'
 
 interface Props {
   userId: string
   onExerciseAdded: () => void
+  existingLabels?: string[]
 }
 
-export default function View1AddExercise({ userId, onExerciseAdded }: Props) {
+export default function View1AddExercise({ userId, onExerciseAdded, existingLabels = [] }: Props) {
   const [name, setName] = useState('')
   const [measurementType, setMeasurementType] = useState<MeasurementType>('reps_only')
   const [setsCount, setSetsCount] = useState(3)
@@ -118,7 +120,7 @@ export default function View1AddExercise({ userId, onExerciseAdded }: Props) {
               value={newLabel}
               onChange={(e) => setNewLabel(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addLabel())}
-              placeholder="הוסף לייבל..."
+              placeholder="הוסף לייבל חדש..."
               className="flex-1 border border-gray-200 rounded-xl px-4 py-2 text-sm text-gray-800 placeholder-gray-300 focus:outline-none focus:border-gray-400"
             />
             <button
@@ -129,30 +131,50 @@ export default function View1AddExercise({ userId, onExerciseAdded }: Props) {
               הוסף
             </button>
           </div>
+          {existingLabels.filter((l) => !labels.includes(l)).length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2.5">
+              {existingLabels.filter((l) => !labels.includes(l)).map((l) => {
+                const c = getLabelColor(l)
+                return (
+                  <button
+                    key={l}
+                    type="button"
+                    onClick={() => setLabels([...labels, l])}
+                    className={`${c.bg} ${c.text} border ${c.border} rounded-full px-2.5 py-0.5 text-xs transition-opacity hover:opacity-70`}
+                  >
+                    + {l}
+                  </button>
+                )
+              })}
+            </div>
+          )}
           {labels.length > 0 && (
             <div className="flex flex-wrap gap-2">
-              {labels.map((l, i) => (
-                <div key={i} className="flex items-center gap-1 bg-gray-50 border border-gray-200 rounded-full px-3 py-1">
-                  {editingIdx === i ? (
-                    <>
-                      <input
-                        autoFocus
-                        value={editVal}
-                        onChange={(e) => setEditVal(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && saveEdit()}
-                        className="w-20 text-xs bg-transparent focus:outline-none text-gray-700"
-                      />
-                      <button type="button" onClick={saveEdit} className="text-xs text-gray-500 hover:text-gray-700">✓</button>
-                    </>
-                  ) : (
-                    <>
-                      <span className="text-xs text-gray-600">{l}</span>
-                      <button type="button" onClick={() => startEdit(i)} className="text-xs text-gray-400 hover:text-gray-600 mr-1">✏</button>
-                      <button type="button" onClick={() => removeLabel(i)} className="text-xs text-gray-400 hover:text-red-400">×</button>
-                    </>
-                  )}
-                </div>
-              ))}
+              {labels.map((l, i) => {
+                const c = getLabelColor(l)
+                return (
+                  <div key={i} className={`flex items-center gap-1 ${c.bg} border ${c.border} rounded-full px-3 py-1`}>
+                    {editingIdx === i ? (
+                      <>
+                        <input
+                          autoFocus
+                          value={editVal}
+                          onChange={(e) => setEditVal(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && saveEdit()}
+                          className={`w-20 text-xs bg-transparent focus:outline-none ${c.text}`}
+                        />
+                        <button type="button" onClick={saveEdit} className={`text-xs ${c.text} opacity-70 hover:opacity-100`}>✓</button>
+                      </>
+                    ) : (
+                      <>
+                        <span className={`text-xs ${c.text}`}>{l}</span>
+                        <button type="button" onClick={() => startEdit(i)} className={`text-xs ${c.text} opacity-50 hover:opacity-100 mr-1`}>✏</button>
+                        <button type="button" onClick={() => removeLabel(i)} className={`text-xs ${c.text} opacity-50 hover:text-red-400`}>×</button>
+                      </>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>

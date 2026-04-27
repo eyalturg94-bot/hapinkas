@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Exercise, MeasurementType, measurementLabels } from '@/lib/supabase'
 import { getSessions, deleteExercisePermanently } from '@/lib/db'
 import { WorkoutSession } from '@/lib/supabase'
+import { getLabelColor } from '@/lib/labelColor'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine
 } from 'recharts'
@@ -144,9 +145,10 @@ export default function View3ViewPerformance({ exercises, onExercisesChanged }: 
             <div className="text-xs text-gray-400 mt-0.5">{measurementLabels[ex.measurement_type]}</div>
             {ex.labels.length > 0 && (
               <div className="flex gap-1 mt-1.5 flex-wrap">
-                {ex.labels.map((l) => (
-                  <span key={l} className="text-[10px] bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">{l}</span>
-                ))}
+                {ex.labels.map((l) => {
+                  const c = getLabelColor(l)
+                  return <span key={l} className={`text-[10px] ${c.bg} ${c.text} rounded-full px-2 py-0.5`}>{l}</span>
+                })}
               </div>
             )}
           </div>
@@ -184,19 +186,22 @@ export default function View3ViewPerformance({ exercises, onExercisesChanged }: 
     <div className="py-4">
       {/* Label filter */}
       <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
-        {allLabels.map((l) => (
-          <button
-            key={l}
-            onClick={() => setSelectedLabel(l)}
-            className={`shrink-0 px-4 py-1.5 rounded-full text-xs border transition-colors ${
-              selectedLabel === l
-                ? 'bg-gray-800 text-white border-gray-800'
-                : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
-            }`}
-          >
-            {l}
-          </button>
-        ))}
+        {allLabels.map((l) => {
+          const isAll = l === 'הכל'
+          const isActive = selectedLabel === l
+          let cls = 'shrink-0 px-4 py-1.5 rounded-full text-xs border transition-colors '
+          if (isAll) {
+            cls += isActive ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
+          } else {
+            const c = getLabelColor(l)
+            cls += isActive ? `${c.activeBg} ${c.activeText} ${c.activeBorder} font-medium` : `${c.bg} ${c.text} ${c.border}`
+          }
+          return (
+            <button key={l} onClick={() => setSelectedLabel(l)} className={cls}>
+              {l}
+            </button>
+          )
+        })}
       </div>
 
       <div className="space-y-2">
