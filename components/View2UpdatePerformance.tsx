@@ -19,8 +19,6 @@ type SessionData = {
   setsData: (number | string)[]
   extraValue: number | string
   notes: string
-  nextSetsData: (number | string)[]
-  nextExtraValue: number | string
   nextNotes: string
   prevSetsData: (number | string)[] | null
   prevExtraValue: number | string | null
@@ -57,11 +55,9 @@ export default function View2UpdatePerformance({ userId, exercises, onExercisesC
         setsData: todaySession?.sets_data?.map(String) ?? empty,
         extraValue: todaySession?.extra_value ?? '',
         notes: todaySession?.notes ?? '',
-        nextSetsData: todaySession?.next_sets_data?.map(String) ?? empty,
-        nextExtraValue: todaySession?.next_extra_value ?? '',
         nextNotes: todaySession?.next_notes ?? '',
-        prevSetsData: prevSession?.next_sets_data?.map(String) ?? null,
-        prevExtraValue: prevSession?.next_extra_value ?? null,
+        prevSetsData: prevSession?.sets_data?.map(String) ?? null,
+        prevExtraValue: prevSession?.extra_value ?? null,
         prevNotes: prevSession?.next_notes ?? null,
         prevDate: prevSession?.session_date ?? null,
       },
@@ -88,8 +84,8 @@ export default function View2UpdatePerformance({ userId, exercises, onExercisesC
         data.setsData.map((v) => Number(v) || 0),
         toNum(data.extraValue),
         data.notes || null,
-        data.nextSetsData.map((v) => Number(v) || 0),
-        toNum(data.nextExtraValue),
+        [],
+        null,
         data.nextNotes || null
       )
     }, 600)
@@ -317,10 +313,17 @@ export default function View2UpdatePerformance({ userId, exercises, onExercisesC
                     ) : (
                       <p className="text-xs text-gray-400 italic">יופיעו פה נתונים החל מהאימון הבא</p>
                     )}
+                    <textarea
+                      value={sess.nextNotes}
+                      onChange={(e) => updateSession(ex.id, { nextNotes: e.target.value })}
+                      placeholder="הערות לאימון הזה..."
+                      rows={2}
+                      className="mt-2 w-full border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-700 placeholder-gray-300 focus:outline-none focus:border-gray-400 resize-none"
+                    />
                   </div>
 
                   {/* ב - ביצועים נוכחיים */}
-                  <div className="px-4 py-3 border-b border-gray-100">
+                  <div className="px-4 py-3">
                     <div className="flex items-center justify-between mb-2">
                       <div className="text-xs font-medium text-gray-600">ביצועים נוכחיים</div>
                       <div className="text-xs text-gray-400">{formatDate(today())}</div>
@@ -341,24 +344,6 @@ export default function View2UpdatePerformance({ userId, exercises, onExercisesC
                     />
                   </div>
 
-                  {/* ג - האימון הבא */}
-                  <div className="px-4 py-3">
-                    <div className="text-xs font-medium text-gray-600 mb-2">האימון הבא</div>
-                    <SetInputs
-                      measurementType={ex.measurement_type}
-                      setsCount={ex.sets_count}
-                      setsData={sess.nextSetsData}
-                      extraValue={sess.nextExtraValue}
-                      onChange={(nextSetsData, nextExtraValue) => updateSession(ex.id, { nextSetsData, nextExtraValue })}
-                    />
-                    <textarea
-                      value={sess.nextNotes}
-                      onChange={(e) => updateSession(ex.id, { nextNotes: e.target.value })}
-                      placeholder="דגשים לאימון הבא..."
-                      rows={2}
-                      className="mt-2 w-full border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-700 placeholder-gray-300 focus:outline-none focus:border-gray-400 resize-none"
-                    />
-                  </div>
                 </div>
               )}
             </div>
