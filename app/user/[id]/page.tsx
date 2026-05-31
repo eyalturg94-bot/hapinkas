@@ -30,11 +30,12 @@ export default function UserPage() {
   }, [router])
 
   const loadExercises = useCallback(async () => {
+    console.log('[page] loadExercises userId:', JSON.stringify(userId), 'length:', userId.length)
     try {
       const data = await getExercises(userId)
       setExercises(data)
     } catch (e) {
-      console.error(e)
+      console.error('[page] getExercises error:', e)
     } finally {
       setLoading(false)
     }

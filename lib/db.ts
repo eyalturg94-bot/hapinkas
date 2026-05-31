@@ -1,11 +1,13 @@
 import { supabase, Exercise, WorkoutSession, MeasurementType } from './supabase'
 
 export async function getExercises(userId: string): Promise<Exercise[]> {
+  console.log('[db] getExercises userId:', JSON.stringify(userId), 'length:', userId.length)
   const { data, error } = await supabase
     .from('exercises')
     .select('*')
     .eq('user_id', userId)
     .order('position', { ascending: true, nullsFirst: false })
+  console.log('[db] getExercises result:', { rows: data?.length, error })
   if (error) throw error
   const rows = data || []
   // If no positions set yet, assign them based on created_at order
