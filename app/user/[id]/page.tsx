@@ -13,16 +13,19 @@ type Tab = 'add' | 'update' | 'view'
 export default function UserPage() {
   const params = useParams()
   const router = useRouter()
-  const userId = decodeURIComponent(params.id as string)
+  const userId = params.id as string
 
   const [tab, setTab] = useState<Tab>('update')
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [loading, setLoading] = useState(true)
+  const [displayName, setDisplayName] = useState('')
 
   useEffect(() => {
     const saved = localStorage.getItem('hapinkas_user_id')
     if (!saved) {
       router.replace('/')
+    } else {
+      setDisplayName(localStorage.getItem('hapinkas_display_name') || saved)
     }
   }, [router])
 
@@ -52,7 +55,7 @@ export default function UserPage() {
       {/* Header */}
       <div className="bg-white border-b border-gray-100 sticky top-0 z-30">
         <div className="max-w-2xl mx-auto px-4 pt-4 pb-0">
-          <h1 className="text-lg font-light text-gray-700 mb-3 text-center">הפנקס של {userId.replace(/\d{4}$/, '')}</h1>
+          <h1 className="text-lg font-light text-gray-700 mb-3 text-center">הפנקס של {displayName}</h1>
           <div className="flex">
             {tabs.map((t) => (
               <button

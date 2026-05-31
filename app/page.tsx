@@ -21,9 +21,9 @@ export default function Home() {
     e.preventDefault()
     const trimmed = name.trim()
     if (!trimmed) return
-    const digits = Math.floor(1000 + Math.random() * 9000)
-    const userId = `${trimmed}${digits}`
+    const userId = String(Math.floor(1000 + Math.random() * 9000))
     localStorage.setItem('hapinkas_user_id', userId)
+    localStorage.setItem('hapinkas_display_name', trimmed)
     router.push(`/user/${userId}`)
   }
 
