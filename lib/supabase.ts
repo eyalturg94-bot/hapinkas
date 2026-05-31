@@ -29,6 +29,7 @@ export interface Exercise {
   labels: string[]
   deleted: boolean
   created_at: string
+  position: number | null
 }
 
 export interface WorkoutSession {

@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Exercise, MeasurementType, measurementLabels } from '@/lib/supabase'
-import { getSessions, deleteExercisePermanently } from '@/lib/db'
+import { getSessions, deleteExercisePermanently, upsertSession } from '@/lib/db'
 import { WorkoutSession } from '@/lib/supabase'
 import { getLabelColor } from '@/lib/labelColor'
+import SetInputs from './SetInputs'
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts'
 
 interface Props {
@@ -37,56 +38,117 @@ function yAxisLabel(type: MeasurementType): string {
 
 interface ChartPoint {
   date: string
+  sessionDate: string
   y: number
   extra: number | null
+  setsData: number[]
 }
 
-const CustomDot = (props: {
-  cx?: number; cy?: number; payload?: ChartPoint; extraSuffix: string
-}) => {
-  const { cx, cy, payload, extraSuffix } = props
-  if (!cx || !cy || !payload) return null
-  return (
-    <g>
-      <circle cx={cx} cy={cy} r={4} fill="#374151" />
-      {payload.extra !== null && extraSuffix && (
-        <text x={cx} y={cy - 10} textAnchor="middle" fontSize={10} fill="#9ca3af">
-          {payload.extra}{extraSuffix}
-        </text>
-      )}
-    </g>
-  )
+interface EditingPoint {
+  sessionDate: string
+  setsData: (number | string)[]
+  extraValue: number | string
 }
 
-function ExerciseChart({ exercise }: { exercise: Exercise }) {
+const LONG_PRESS_MS = 500
+
+function ExerciseChart({ exercise, userId }: { exercise: Exercise; userId: string }) {
   const [data, setData] = useState<ChartPoint[]>([])
   const [loading, setLoading] = useState(true)
+  const [editing, setEditing] = useState<EditingPoint | null>(null)
+  const [saving, setSaving] = useState(false)
 
-  useEffect(() => {
+  const fetchData = useCallback(() => {
+    setLoading(true)
     getSessions(exercise.id).then((sessions: WorkoutSession[]) => {
       const points = sessions.map((s) => ({
         date: formatDate(s.session_date),
+        sessionDate: s.session_date,
         y: calcY(exercise.measurement_type, s.sets_data),
         extra: s.extra_value ?? null,
+        setsData: s.sets_data,
       }))
       setData(points)
       setLoading(false)
     })
   }, [exercise])
 
-  if (loading) return <div className="h-40 flex items-center justify-center"><div className="w-5 h-5 border-2 border-gray-200 border-t-gray-500 rounded-full animate-spin" /></div>
+  useEffect(() => { fetchData() }, [fetchData])
 
+  const handleSave = async () => {
+    if (!editing) return
+    setSaving(true)
+    const toNum = (v: number | string) => (v === '' ? null : Number(v))
+    await upsertSession(
+      exercise.id,
+      userId,
+      editing.sessionDate,
+      editing.setsData.map((v) => Number(v) || 0),
+      toNum(editing.extraValue),
+      null,
+      [],
+      null,
+      null
+    )
+    setSaving(false)
+    setEditing(null)
+    fetchData()
+  }
+
+  if (loading) return <div className="h-40 flex items-center justify-center"><div className="w-5 h-5 border-2 border-gray-200 border-t-gray-500 rounded-full animate-spin" /></div>
   if (data.length === 0) return <p className="text-xs text-gray-400 text-center py-6">אין נתונים עדיין</p>
 
   const suffix = extraLabel(exercise.measurement_type)
 
+  const CustomDot = (props: { cx?: number; cy?: number; payload?: ChartPoint }) => {
+    const { cx, cy, payload } = props
+    const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+    if (!cx || !cy || !payload) return null
+
+    const startPress = () => {
+      timerRef.current = setTimeout(() => {
+        setEditing({
+          sessionDate: payload.sessionDate,
+          setsData: payload.setsData.map(String),
+          extraValue: payload.extra ?? '',
+        })
+      }, LONG_PRESS_MS)
+    }
+
+    const cancelPress = () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+    }
+
+    return (
+      <g
+        onMouseDown={startPress}
+        onMouseUp={cancelPress}
+        onMouseLeave={cancelPress}
+        onTouchStart={startPress}
+        onTouchEnd={cancelPress}
+        onTouchMove={cancelPress}
+        style={{ cursor: 'pointer' }}
+      >
+        <circle cx={cx} cy={cy} r={10} fill="transparent" />
+        <circle cx={cx} cy={cy} r={4} fill="#374151" />
+        {payload.extra !== null && suffix && (
+          <text x={cx} y={cy - 10} textAnchor="middle" fontSize={10} fill="#9ca3af">
+            {payload.extra}{suffix}
+          </text>
+        )}
+      </g>
+    )
+  }
+
   return (
     <div className="mt-3">
+      <p className="text-[10px] text-gray-300 text-center mb-1">לחץ לחיצה ארוכה על נקודה לעריכה</p>
       <ResponsiveContainer width="100%" height={180}>
         <LineChart data={data} margin={{ top: 20, right: 16, left: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
           <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-          <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} width={30} unit="" />
+          <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} width={30} />
           <Tooltip
             contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb', boxShadow: 'none' }}
             formatter={(val, _, entry) => {
@@ -103,16 +165,48 @@ function ExerciseChart({ exercise }: { exercise: Exercise }) {
             dataKey="y"
             stroke="#374151"
             strokeWidth={2}
-            dot={<CustomDot extraSuffix={suffix} />}
+            dot={<CustomDot />}
             activeDot={{ r: 5 }}
           />
         </LineChart>
       </ResponsiveContainer>
+
+      {/* Edit modal */}
+      {editing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onMouseDown={() => setEditing(null)}>
+          <div className="bg-white rounded-2xl shadow-xl p-5 mx-4 w-full max-w-sm" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="text-sm font-medium text-gray-700 mb-1">עריכת אימון</div>
+            <div className="text-xs text-gray-400 mb-4">{formatDate(editing.sessionDate)}</div>
+            <SetInputs
+              measurementType={exercise.measurement_type}
+              setsCount={exercise.sets_count}
+              setsData={editing.setsData}
+              extraValue={editing.extraValue}
+              onChange={(setsData, extraValue) => setEditing({ ...editing, setsData, extraValue })}
+            />
+            <div className="flex gap-2 justify-end mt-5">
+              <button
+                onClick={() => setEditing(null)}
+                className="px-4 py-1.5 text-xs text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50"
+              >
+                ביטול
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="px-4 py-1.5 text-xs bg-gray-800 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50"
+              >
+                {saving ? '...' : 'שמור'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
-export default function View3ViewPerformance({ exercises, onExercisesChanged }: Props) {
+export default function View3ViewPerformance({ userId, exercises, onExercisesChanged }: Props) {
   const [selectedLabel, setSelectedLabel] = useState('הכל')
   const [openId, setOpenId] = useState<string | null>(null)
 
@@ -175,7 +269,7 @@ export default function View3ViewPerformance({ exercises, onExercisesChanged }: 
         </div>
         {isOpen && (
           <div className="border-t border-gray-100 px-4 pb-4">
-            <ExerciseChart exercise={ex} />
+            <ExerciseChart exercise={ex} userId={userId} />
           </div>
         )}
       </div>
@@ -184,7 +278,6 @@ export default function View3ViewPerformance({ exercises, onExercisesChanged }: 
 
   return (
     <div className="py-4">
-      {/* Label filter */}
       <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
         {allLabels.map((l) => {
           const isAll = l === 'הכל'

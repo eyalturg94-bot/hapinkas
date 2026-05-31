@@ -5,9 +5,19 @@ export async function getExercises(userId: string): Promise<Exercise[]> {
     .from('exercises')
     .select('*')
     .eq('user_id', userId)
-    .order('created_at', { ascending: true })
+    .order('position', { ascending: true, nullsFirst: false })
   if (error) throw error
-  return data || []
+  const rows = data || []
+  // If no positions set yet, assign them based on created_at order
+  if (rows.some((e) => e.position === null)) {
+    const sorted = [...rows].sort((a, b) => a.created_at.localeCompare(b.created_at))
+    await Promise.all(sorted.map((e, i) =>
+      supabase.from('exercises').update({ position: i }).eq('id', e.id)
+    ))
+    sorted.forEach((e, i) => { e.position = i })
+    return sorted
+  }
+  return rows
 }
 
 export async function createExercise(
@@ -35,10 +45,16 @@ export async function createExercise(
 
 export async function updateExercise(
   id: string,
-  updates: Partial<Pick<Exercise, 'name' | 'measurement_type' | 'sets_count' | 'labels' | 'deleted'>>
+  updates: Partial<Pick<Exercise, 'name' | 'measurement_type' | 'sets_count' | 'labels' | 'deleted' | 'position'>>
 ): Promise<void> {
   const { error } = await supabase.from('exercises').update(updates).eq('id', id)
   if (error) throw error
+}
+
+export async function updateExercisePositions(ids: string[]): Promise<void> {
+  await Promise.all(ids.map((id, i) =>
+    supabase.from('exercises').update({ position: i }).eq('id', id)
+  ))
 }
 
 export async function deleteExercisePermanently(id: string): Promise<void> {

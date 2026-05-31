@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Exercise, measurementLabels } from '@/lib/supabase'
-import { updateExercise, getSessions, upsertSession } from '@/lib/db'
+import { updateExercise, getSessions, upsertSession, updateExercisePositions } from '@/lib/db'
 import { getLabelColor } from '@/lib/labelColor'
 import SetInputs from './SetInputs'
 import Stopwatch from './Stopwatch'
@@ -26,6 +26,8 @@ type SessionData = {
   prevDate: string | null
 }
 
+const LONG_PRESS_MS = 500
+
 export default function View2UpdatePerformance({ userId, exercises, onExercisesChanged }: Props) {
   const [selectedLabel, setSelectedLabel] = useState<string>('הכל')
   const [openId, setOpenId] = useState<string | null>(null)
@@ -37,18 +39,33 @@ export default function View2UpdatePerformance({ userId, exercises, onExercisesC
   const [newLabelVal, setNewLabelVal] = useState('')
   const saveTimer = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
 
+  // Drag state
+  const [orderedIds, setOrderedIds] = useState<string[]>([])
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const itemRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const containerRef = useRef<HTMLDivElement | null>(null)
+
   const active = exercises.filter((e) => !e.deleted)
   const allLabels = ['הכל', ...Array.from(new Set(active.flatMap((e) => e.labels)))]
-  const filtered = selectedLabel === 'הכל' ? active : active.filter((e) => e.labels.includes(selectedLabel))
+
+  // Keep orderedIds in sync with active exercises
+  useEffect(() => {
+    const sorted = [...active].sort((a, b) => (a.position ?? 9999) - (b.position ?? 9999))
+    setOrderedIds(sorted.map((e) => e.id))
+  }, [exercises]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const orderedFiltered = orderedIds
+    .map((id) => active.find((e) => e.id === id))
+    .filter((e): e is Exercise => !!e && (selectedLabel === 'הכל' || e.labels.includes(selectedLabel)))
 
   const loadSession = useCallback(async (exercise: Exercise) => {
     const all = await getSessions(exercise.id)
     const todayStr = today()
     const todaySession = all.find((s) => s.session_date === todayStr)
     const prevSession = all.filter((s) => s.session_date !== todayStr).slice(-1)[0] || null
-
     const empty = Array(exercise.sets_count).fill('')
-
     setSessions((prev) => ({
       ...prev,
       [exercise.id]: {
@@ -78,14 +95,11 @@ export default function View2UpdatePerformance({ userId, exercises, onExercisesC
       if (!exercise) return
       const toNum = (v: number | string) => (v === '' ? null : Number(v))
       await upsertSession(
-        exerciseId,
-        userId,
-        today(),
+        exerciseId, userId, today(),
         data.setsData.map((v) => Number(v) || 0),
         toNum(data.extraValue),
         data.notes || null,
-        [],
-        null,
+        [], null,
         data.nextNotes || null
       )
     }, 600)
@@ -123,8 +137,72 @@ export default function View2UpdatePerformance({ userId, exercises, onExercisesC
     return `${day}/${m}/${y}`
   }
 
+  // --- Drag logic ---
+  const getIndexAtY = (clientY: number): number => {
+    let best = orderedFiltered.length - 1
+    for (let i = 0; i < orderedFiltered.length; i++) {
+      const el = itemRefs.current[orderedFiltered[i].id]
+      if (!el) continue
+      const rect = el.getBoundingClientRect()
+      if (clientY < rect.top + rect.height / 2) { best = i; break }
+    }
+    return best
+  }
+
+  const reorderedList = (() => {
+    if (draggingId === null || dragOverIndex === null) return orderedFiltered
+    const list = [...orderedFiltered]
+    const fromIndex = list.findIndex((e) => e.id === draggingId)
+    if (fromIndex === -1) return list
+    const [item] = list.splice(fromIndex, 1)
+    list.splice(dragOverIndex, 0, item)
+    return list
+  })()
+
+  const handleLongPressStart = (exId: string, clientY: number) => {
+    if (editingId) return
+    longPressTimer.current = setTimeout(() => {
+      setDraggingId(exId)
+      setDragOverIndex(orderedFiltered.findIndex((e) => e.id === exId))
+    }, LONG_PRESS_MS)
+  }
+
+  const handlePointerMove = useCallback((e: PointerEvent) => {
+    if (!draggingId) return
+    e.preventDefault()
+    const idx = getIndexAtY(e.clientY)
+    setDragOverIndex(idx)
+  }, [draggingId, orderedFiltered]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handlePointerUp = useCallback(async () => {
+    if (longPressTimer.current) clearTimeout(longPressTimer.current)
+    if (!draggingId || dragOverIndex === null) { setDraggingId(null); return }
+
+    const newOrder = reorderedList.map((e) => e.id)
+    // Build full orderedIds with the new filtered order merged in
+    const filteredIds = new Set(orderedFiltered.map((e) => e.id))
+    const base = orderedIds.filter((id) => !filteredIds.has(id))
+    // Insert filtered items back in their positions (simplified: append after non-filtered)
+    const merged = [...base, ...newOrder]
+    setOrderedIds(merged)
+    setDraggingId(null)
+    setDragOverIndex(null)
+    await updateExercisePositions(merged)
+  }, [draggingId, dragOverIndex, reorderedList, orderedFiltered, orderedIds])
+
+  useEffect(() => {
+    if (draggingId) {
+      window.addEventListener('pointermove', handlePointerMove, { passive: false })
+      window.addEventListener('pointerup', handlePointerUp)
+    }
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+    }
+  }, [draggingId, handlePointerMove, handlePointerUp])
+
   return (
-    <div className="py-4 pb-24">
+    <div className="py-4 pb-24" ref={containerRef}>
       {/* Label filter */}
       <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
         {allLabels.map((l) => {
@@ -138,25 +216,32 @@ export default function View2UpdatePerformance({ userId, exercises, onExercisesC
             cls += isActive ? `${c.activeBg} ${c.activeText} ${c.activeBorder} font-medium` : `${c.bg} ${c.text} ${c.border}`
           }
           return (
-            <button key={l} onClick={() => setSelectedLabel(l)} className={cls}>
-              {l}
-            </button>
+            <button key={l} onClick={() => setSelectedLabel(l)} className={cls}>{l}</button>
           )
         })}
       </div>
 
-      {filtered.length === 0 && (
+      {orderedFiltered.length === 0 && (
         <p className="text-center text-gray-400 text-sm py-16">אין תרגילים. הוסף תרגיל חדש בלשונית "הוספת תרגיל".</p>
       )}
 
       <div className="space-y-2">
-        {filtered.map((ex) => {
+        {reorderedList.map((ex, idx) => {
           const isOpen = openId === ex.id
           const sess = sessions[ex.id]
+          const isDragging = draggingId === ex.id
 
           return (
-            <div key={ex.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-              {/* Row */}
+            <div
+              key={ex.id}
+              ref={(el) => { itemRefs.current[ex.id] = el }}
+              className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden transition-all"
+              style={{
+                opacity: isDragging ? 0.5 : 1,
+                boxShadow: isDragging ? '0 8px 24px rgba(0,0,0,0.12)' : undefined,
+                transform: isDragging ? 'scale(1.01)' : undefined,
+              }}
+            >
               {editingId === ex.id ? (
                 <div className="p-4 space-y-3">
                   <input
@@ -167,10 +252,7 @@ export default function View2UpdatePerformance({ userId, exercises, onExercisesC
                   <div className="flex items-center gap-3">
                     <label className="text-xs text-gray-400">סטים:</label>
                     <input
-                      type="number"
-                      min={1}
-                      max={20}
-                      value={editSets}
+                      type="number" min={1} max={20} value={editSets}
                       onChange={(e) => setEditSets(Math.max(1, parseInt(e.target.value) || 1))}
                       className="w-16 border border-gray-200 rounded-lg px-2 py-1 text-sm text-center focus:outline-none"
                     />
@@ -184,10 +266,7 @@ export default function View2UpdatePerformance({ userId, exercises, onExercisesC
                           if (e.key === 'Enter') {
                             e.preventDefault()
                             const t = newLabelVal.trim()
-                            if (t && !editLabels.includes(t)) {
-                              setEditLabels([...editLabels, t])
-                              setNewLabelVal('')
-                            }
+                            if (t && !editLabels.includes(t)) { setEditLabels([...editLabels, t]); setNewLabelVal('') }
                           }
                         }}
                         placeholder="לייבל חדש..."
@@ -197,27 +276,18 @@ export default function View2UpdatePerformance({ userId, exercises, onExercisesC
                         type="button"
                         onClick={() => {
                           const t = newLabelVal.trim()
-                          if (t && !editLabels.includes(t)) {
-                            setEditLabels([...editLabels, t])
-                            setNewLabelVal('')
-                          }
+                          if (t && !editLabels.includes(t)) { setEditLabels([...editLabels, t]); setNewLabelVal('') }
                         }}
                         className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-xs hover:bg-gray-200"
-                      >
-                        הוסף
-                      </button>
+                      >הוסף</button>
                     </div>
                     {allLabels.slice(1).filter((l) => !editLabels.includes(l)).length > 0 && (
                       <div className="flex flex-wrap gap-1.5 mb-2">
                         {allLabels.slice(1).filter((l) => !editLabels.includes(l)).map((l) => {
                           const c = getLabelColor(l)
                           return (
-                            <button
-                              key={l}
-                              type="button"
-                              onClick={() => setEditLabels([...editLabels, l])}
-                              className={`${c.bg} ${c.text} border ${c.border} rounded-full px-2.5 py-0.5 text-xs transition-opacity hover:opacity-70`}
-                            >
+                            <button key={l} type="button" onClick={() => setEditLabels([...editLabels, l])}
+                              className={`${c.bg} ${c.text} border ${c.border} rounded-full px-2.5 py-0.5 text-xs transition-opacity hover:opacity-70`}>
                               + {l}
                             </button>
                           )
@@ -243,9 +313,25 @@ export default function View2UpdatePerformance({ userId, exercises, onExercisesC
                 </div>
               ) : (
                 <div
-                  className="flex items-center px-4 py-3.5 cursor-pointer hover:bg-gray-50 transition-colors"
-                  onClick={() => setOpenId(isOpen ? null : ex.id)}
+                  className="flex items-center px-4 py-3.5 cursor-pointer hover:bg-gray-50 transition-colors select-none"
+                  onClick={() => { if (!draggingId) setOpenId(isOpen ? null : ex.id) }}
+                  onPointerDown={(e) => {
+                    longPressTimer.current && clearTimeout(longPressTimer.current)
+                    handleLongPressStart(ex.id, e.clientY)
+                  }}
+                  onPointerUp={() => { if (longPressTimer.current) clearTimeout(longPressTimer.current) }}
+                  onPointerCancel={() => { if (longPressTimer.current) clearTimeout(longPressTimer.current) }}
                 >
+                  {/* Drag handle hint when dragging */}
+                  {draggingId && (
+                    <div className="mr-2 text-gray-300">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                        <circle cx="9" cy="7" r="1.5"/><circle cx="15" cy="7" r="1.5"/>
+                        <circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/>
+                        <circle cx="9" cy="17" r="1.5"/><circle cx="15" cy="17" r="1.5"/>
+                      </svg>
+                    </div>
+                  )}
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-gray-800 truncate">{ex.name}</div>
                     <div className="text-xs text-gray-400 mt-0.5">{measurementLabels[ex.measurement_type]} · {ex.sets_count} סטים</div>
@@ -289,10 +375,8 @@ export default function View2UpdatePerformance({ userId, exercises, onExercisesC
                 </div>
               )}
 
-              {/* Rolldown */}
-              {isOpen && sess && (
+              {isOpen && sess && !draggingId && (
                 <div className="border-t border-gray-100">
-                  {/* א - האימון הקודם */}
                   <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
                     <div className="text-xs font-medium text-gray-400 mb-2">האימון הקודם</div>
                     {sess.prevSetsData ? (
@@ -306,9 +390,7 @@ export default function View2UpdatePerformance({ userId, exercises, onExercisesC
                           onChange={() => {}}
                           readOnly
                         />
-                        {sess.prevNotes && (
-                          <p className="text-xs text-gray-400 mt-1 italic">{sess.prevNotes}</p>
-                        )}
+                        {sess.prevNotes && <p className="text-xs text-gray-400 mt-1 italic">{sess.prevNotes}</p>}
                       </div>
                     ) : (
                       <p className="text-xs text-gray-400 italic">יופיעו פה נתונים החל מהאימון הבא</p>
@@ -321,8 +403,6 @@ export default function View2UpdatePerformance({ userId, exercises, onExercisesC
                       className="mt-2 w-full border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-700 placeholder-gray-300 focus:outline-none focus:border-gray-400 resize-none"
                     />
                   </div>
-
-                  {/* ב - ביצועים נוכחיים */}
                   <div className="px-4 py-3">
                     <div className="flex items-center justify-between mb-2">
                       <div className="text-xs font-medium text-gray-600">ביצועים נוכחיים</div>
@@ -343,7 +423,6 @@ export default function View2UpdatePerformance({ userId, exercises, onExercisesC
                       className="mt-2 w-full border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-700 placeholder-gray-300 focus:outline-none focus:border-gray-400 resize-none"
                     />
                   </div>
-
                 </div>
               )}
             </div>

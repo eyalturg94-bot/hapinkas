@@ -8,8 +8,12 @@ create table if not exists exercises (
   sets_count integer not null default 3,
   labels text[] not null default '{}',
   deleted boolean not null default false,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  position integer
 );
+
+-- Migration for existing databases:
+-- alter table exercises add column if not exists position integer;
 
 create table if not exists workout_sessions (
   id uuid primary key default gen_random_uuid(),
