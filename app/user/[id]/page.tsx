@@ -13,7 +13,7 @@ type Tab = 'add' | 'update' | 'view'
 export default function UserPage() {
   const params = useParams()
   const router = useRouter()
-  const userId = params.id as string
+  const userId = decodeURIComponent(params.id as string)
 
   const [tab, setTab] = useState<Tab>('update')
   const [exercises, setExercises] = useState<Exercise[]>([])
