@@ -16,6 +16,8 @@ import {
   useSortable,
   verticalListSortingStrategy,
   arrayMove,
+  defaultAnimateLayoutChanges,
+  AnimateLayoutChanges,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Exercise, measurementLabels } from '@/lib/supabase'
@@ -46,6 +48,11 @@ type SessionData = {
 const formatDate = (d: string) => {
   const [y, m, day] = d.split('-')
   return `${day}/${m}/${y}`
+}
+
+const animateLayoutChanges: AnimateLayoutChanges = (args) => {
+  if (args.isDragging || args.isSorting) return true
+  return defaultAnimateLayoutChanges(args)
 }
 
 function ExerciseOverlayCard({ ex }: { ex: Exercise }) {
@@ -110,11 +117,12 @@ function SortableExerciseRow({
   const { setNodeRef, transform, transition, isDragging, listeners, attributes } = useSortable({
     id: ex.id,
     disabled: isEditing,
+    animateLayoutChanges,
   })
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
-    transition,
+    transition: transition ? 'transform 150ms ease' : undefined,
   }
 
   return (
@@ -321,11 +329,13 @@ export default function View2UpdatePerformance({ userId, exercises, onExercisesC
   const [activeId, setActiveId] = useState<string | null>(null)
   const [orderedIds, setOrderedIds] = useState<string[]>([])
   const saveTimer = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  const pointerYRef = useRef(0)
+  const scrollRafRef = useRef<number | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        delay: 500,
+        delay: 300,
         tolerance: 5,
       },
     })
@@ -370,6 +380,38 @@ export default function View2UpdatePerformance({ userId, exercises, onExercisesC
       if (ex) loadSession(ex)
     }
   }, [openId, exercises, loadSession])
+
+  // Auto-scroll when dragging near screen edges
+  useEffect(() => {
+    if (!activeId) {
+      if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current)
+      scrollRafRef.current = null
+      return
+    }
+
+    const onPointerMove = (e: PointerEvent) => { pointerYRef.current = e.clientY }
+    window.addEventListener('pointermove', onPointerMove, { passive: true })
+
+    const EDGE = 20
+    const MAX_SPEED = 10
+
+    const tick = () => {
+      const y = pointerYRef.current
+      const vh = window.innerHeight
+      if (y < EDGE) {
+        window.scrollBy(0, -MAX_SPEED * (1 - y / EDGE))
+      } else if (y > vh - EDGE) {
+        window.scrollBy(0, MAX_SPEED * (1 - (vh - y) / EDGE))
+      }
+      scrollRafRef.current = requestAnimationFrame(tick)
+    }
+    scrollRafRef.current = requestAnimationFrame(tick)
+
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove)
+      if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current)
+    }
+  }, [activeId])
 
   const scheduleSave = (exerciseId: string, data: SessionData) => {
     if (saveTimer.current[exerciseId]) clearTimeout(saveTimer.current[exerciseId])
@@ -418,9 +460,16 @@ export default function View2UpdatePerformance({ userId, exercises, onExercisesC
   const handleDragStart = (event: DragStartEvent) => {
     setActiveId(String(event.active.id))
     setOpenId(null)
+    document.body.style.overflow = 'hidden'
+  }
+
+  const handleDragCancel = () => {
+    document.body.style.overflow = ''
+    setActiveId(null)
   }
 
   const handleDragEnd = async (event: DragEndEvent) => {
+    document.body.style.overflow = ''
     const { active, over } = event
     setActiveId(null)
 
@@ -470,9 +519,10 @@ export default function View2UpdatePerformance({ userId, exercises, onExercisesC
         collisionDetection={closestCenter}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
       >
         <SortableContext items={orderedFiltered.map((e) => e.id)} strategy={verticalListSortingStrategy}>
-          <div className="space-y-2">
+          <div className="space-y-2" style={activeId ? { touchAction: 'none' } : undefined}>
             {orderedFiltered.map((ex) => (
               <SortableExerciseRow
                 key={ex.id}
